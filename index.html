@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Kana English</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+  * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+  body { background: #030712; color: white; font-family: -apple-system, sans-serif; overscroll-behavior: none; }
+  #camera-guide {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  #camera-guide .frame {
+    border: 2px solid #facc15;
+    border-radius: 8px;
+    width: 85%; height: 55%;
+    opacity: 0.7;
+  }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 16px); }
+</style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<!-- ヘッダー -->
+<header class="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
+  <button id="btn-home" class="flex items-center gap-2">
+    <span class="text-xl">📖</span>
+    <h1 class="text-base font-bold text-white">Kana English</h1>
+  </button>
+  <div class="flex items-center gap-2">
+    <span id="api-status" class="text-xs text-gray-500 bg-gray-800 px-2 py-1 rounded-full">英語→カタカナ</span>
+    <button id="btn-settings" class="text-gray-400 text-xl p-1">⚙️</button>
+  </div>
+</header>
+
+<!-- 設定モーダル -->
+<div id="modal-settings" class="hidden fixed inset-0 bg-black/80 z-50 flex items-end">
+  <div class="bg-gray-900 border-t border-gray-700 rounded-t-3xl p-6 w-full space-y-4 safe-bottom">
+    <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-2"></div>
+    <h2 class="text-base font-bold text-white">⚙️ OpenAI APIキー設定</h2>
+    <p class="text-xs text-gray-400">キーはこのブラウザのlocalStorageにのみ保存されます。</p>
+    <input id="input-apikey" type="password" placeholder="sk-..." class="w-full bg-gray-800 border border-gray-600 text-white text-sm rounded-2xl px-4 py-3 focus:outline-none focus:border-blue-500">
+    <div class="flex gap-2">
+      <button id="btn-save-apikey" class="flex-1 bg-blue-600 text-white font-bold py-3 rounded-2xl text-sm">保存</button>
+      <button id="btn-delete-apikey" class="bg-red-900 text-red-300 font-bold py-3 px-4 rounded-2xl text-sm">削除</button>
+    </div>
+    <button id="btn-close-settings" class="w-full bg-gray-800 text-gray-300 py-3 rounded-2xl text-sm">閉じる</button>
+    <p id="apikey-message" class="text-xs text-center hidden"></p>
+  </div>
+</div>
+
+<!-- メイン -->
+<main class="flex-1 px-4 py-5 max-w-lg mx-auto w-full">
+
+  <!-- アイドル画面 -->
+  <div id="screen-idle" class="flex flex-col items-center gap-5 pt-4">
+    <div class="text-center space-y-2">
+      <div class="text-6xl">📷</div>
+      <h2 class="text-xl font-bold">英語をかざして読む</h2>
+      <p class="text-gray-400 text-sm leading-relaxed">カメラで英文を撮影して<br>カタカナ発音を表示します</p>
+    </div>
+    <div class="w-full space-y-3">
+      <button id="btn-start-camera" class="w-full bg-blue-600 active:bg-blue-700 text-white font-bold py-5 rounded-2xl text-lg shadow-lg shadow-blue-900/40">
+        📷 カメラを起動する
+      </button>
+      <label class="block w-full bg-gray-700 active:bg-gray-600 text-gray-200 font-bold py-5 rounded-2xl text-center text-lg cursor-pointer">
+        🖼️ 写真を選ぶ
+        <input type="file" accept="image/*" id="upload-idle" class="hidden">
+      </label>
+    </div>
+    <div class="w-full bg-gray-800 rounded-2xl p-4 space-y-3">
+      <h3 class="text-sm font-semibold text-gray-300">使い方</h3>
+      <div class="flex items-start gap-3">
+        <span class="w-6 h-6 bg-blue-600 text-white rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0">1</span>
+        <span class="text-gray-300 text-sm">カメラ起動 または 写真を選択</span>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="w-6 h-6 bg-blue-600 text-white rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0">2</span>
+        <span class="text-gray-300 text-sm">英文を撮影 → 自動でOCR認識</span>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="w-6 h-6 bg-blue-600 text-white rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0">3</span>
+        <span class="text-gray-300 text-sm">カタカナ発音を確認</span>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="w-6 h-6 bg-blue-600 text-white rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0">4</span>
+        <span class="text-gray-300 text-sm">🔊 音声再生 / ✨ AI高精度変換</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- カメラ画面 -->
+  <div id="screen-camera" class="hidden space-y-3">
+    <div class="relative w-full rounded-2xl overflow-hidden bg-black" style="aspect-ratio:4/3">
+      <video id="video" autoplay playsinline muted class="w-full h-full object-cover"></video>
+      <div id="camera-guide"><div class="frame"></div></div>
+      <p class="absolute bottom-2 left-0 right-0 text-center text-xs text-yellow-300 opacity-80">黄枠内に英文を合わせてください</p>
+    </div>
+    <div id="camera-error" class="hidden bg-red-900/50 border border-red-700 rounded-xl px-4 py-3 text-red-300 text-sm"></div>
+    <button id="btn-capture" class="w-full bg-yellow-500 active:bg-yellow-600 text-black font-bold py-5 rounded-2xl text-xl shadow-lg">
+      📸 撮影する
+    </button>
+    <label class="block w-full bg-gray-700 active:bg-gray-600 text-gray-200 font-bold py-4 rounded-2xl text-center cursor-pointer">
+      🖼️ 写真を選ぶ
+      <input type="file" accept="image/*" id="upload-camera" class="hidden">
+    </label>
+    <button id="btn-back-from-camera" class="w-full bg-gray-800 text-gray-300 py-3 rounded-xl text-sm">
+      ← 戻る
+    </button>
+  </div>
+
+  <!-- 処理中画面 -->
+  <div id="screen-processing" class="hidden space-y-4">
+    <div class="rounded-2xl overflow-hidden bg-black" style="aspect-ratio:4/3">
+      <img id="captured-img" src="" alt="" class="w-full h-full object-cover">
+    </div>
+    <div class="bg-gray-800 rounded-2xl p-5 space-y-3">
+      <p class="text-sm text-gray-300 text-center">OCR処理中…</p>
+      <div class="w-full bg-gray-700 rounded-full h-3">
+        <div id="progress-bar" class="bg-blue-500 h-3 rounded-full transition-all duration-200" style="width:0%"></div>
+      </div>
+      <p id="progress-text" class="text-xs text-gray-500 text-center">0%</p>
+    </div>
+  </div>
+
+  <!-- 結果画面 -->
+  <div id="screen-result" class="hidden space-y-4 pb-6">
+    <div class="rounded-2xl overflow-hidden bg-black" style="aspect-ratio:4/3">
+      <img id="result-img" src="" alt="" class="w-full h-full object-cover">
+    </div>
+
+    <!-- OCR認識結果 -->
+    <section class="bg-gray-800 rounded-2xl p-4">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-sm font-semibold text-gray-300">📷 読み取り結果</h2>
+        <span id="confidence-text" class="text-xs text-gray-500"></span>
+      </div>
+      <p id="ocr-text" class="text-white text-base leading-relaxed break-words mb-3"></p>
+      <button id="btn-speak" class="flex items-center gap-2 bg-gray-700 active:bg-gray-600 text-gray-200 text-sm px-4 py-2 rounded-xl">
+        🔊 英語で読み上げる
+      </button>
+    </section>
+
+    <!-- 単語ごとのカタカナ -->
+    <section class="bg-gray-800 rounded-2xl p-4">
+      <h2 class="text-sm font-semibold text-gray-300 mb-3">🔤 単語ごとの発音</h2>
+      <div id="word-cards" class="flex flex-wrap gap-x-2 gap-y-4"></div>
+    </section>
+
+    <!-- AI変換 -->
+    <section id="section-ai" class="bg-gray-800 rounded-2xl p-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-sm font-semibold text-gray-300">✨ AI精度向上</h2>
+          <p class="text-xs text-gray-500 mt-0.5">GPTが全単語を高精度に変換</p>
+        </div>
+        <button id="btn-ai-convert" class="bg-green-700 active:bg-green-800 text-white text-sm font-bold px-4 py-2 rounded-xl">AI変換</button>
+      </div>
+      <p id="ai-error" class="text-xs text-red-400 mt-2 hidden"></p>
+    </section>
+
+    <!-- 全文カタカナ -->
+    <section class="bg-blue-900/40 border border-blue-700/50 rounded-2xl p-4">
+      <h2 class="text-sm font-semibold text-blue-300 mb-2">🔊 英文全体のカタカナ読み</h2>
+      <p id="full-katakana" class="text-blue-100 text-base leading-relaxed break-words"></p>
+    </section>
+
+    <div class="flex gap-3">
+      <button id="btn-retry" class="flex-1 bg-blue-600 active:bg-blue-700 text-white font-bold py-4 rounded-2xl">
+        🔄 再読み取り
+      </button>
+      <button id="btn-home-from-result" class="flex-1 bg-gray-800 active:bg-gray-700 text-gray-300 py-4 rounded-2xl">
+        🏠 ホームへ
+      </button>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ── 発音辞書 ─────────────────────────────────────────────────────────
+const DICT={
+  a:{k:"ア",v:true},about:{k:"アバウト",v:true},above:{k:"アバブ",v:true},absolutely:{k:"アブソルートリー",v:true},
+  access:{k:"アクセス",v:true},account:{k:"アカウント",v:true},action:{k:"アクション",v:true},active:{k:"アクティブ",v:true},
+  activity:{k:"アクティビティ",v:true},actual:{k:"アクチュアル",v:true},actually:{k:"アクチュアリー",v:true},add:{k:"アド",v:true},
+  address:{k:"アドレス",v:true},admin:{k:"アドミン",v:true},after:{k:"アフター",v:true},again:{k:"アゲイン",v:true},
+  agent:{k:"エージェント",v:true},agree:{k:"アグリー",v:true},agreement:{k:"アグリーメント",v:true},alert:{k:"アラート",v:true},
+  algorithm:{k:"アルゴリズム",v:true},all:{k:"オール",v:true},allow:{k:"アロウ",v:true},already:{k:"オールレディ",v:true},
+  also:{k:"オールソー",v:true},always:{k:"オールウェイズ",v:true},analysis:{k:"アナリシス",v:true},analytics:{k:"アナリティクス",v:true},
+  and:{k:"アンド",v:true},answer:{k:"アンサー",v:true},any:{k:"エニー",v:true},api:{k:"エーピーアイ",v:true},
+  app:{k:"アプリ",v:true},apple:{k:"アップル",v:true},application:{k:"アプリケーション",v:true},apply:{k:"アプライ",v:true},
+  approach:{k:"アプローチ",v:true},archive:{k:"アーカイブ",v:true},are:{k:"アー",v:true},area:{k:"エリア",v:true},
+  argument:{k:"アーギュメント",v:true},array:{k:"アレイ",v:true},assessment:{k:"アセスメント",v:true},asset:{k:"アセット",v:true},
+  at:{k:"アット",v:true},attach:{k:"アタッチ",v:true},audit:{k:"オーディット",v:true},auth:{k:"オース",v:true},
+  authentication:{k:"オーセンティケーション",v:true},authorization:{k:"オーソリゼーション",v:true},
+  automation:{k:"オートメーション",v:true},available:{k:"アベイラブル",v:true},
+  background:{k:"バックグラウンド",v:false},backup:{k:"バックアップ",v:false},balance:{k:"バランス",v:false},
+  batch:{k:"バッチ",v:false},be:{k:"ビー",v:false},because:{k:"ビコーズ",v:false},before:{k:"ビフォー",v:false},
+  behavior:{k:"ビヘイビア",v:false},between:{k:"ビトウィーン",v:false},big:{k:"ビッグ",v:false},
+  blockchain:{k:"ブロックチェーン",v:false},both:{k:"ボース",v:false},branch:{k:"ブランチ",v:false},
+  brand:{k:"ブランド",v:false},break:{k:"ブレイク",v:false},browser:{k:"ブラウザ",v:false},
+  budget:{k:"バジェット",v:false},bug:{k:"バグ",v:false},build:{k:"ビルド",v:false},business:{k:"ビジネス",v:false},button:{k:"ボタン",v:false},
+  cache:{k:"キャッシュ",v:false},call:{k:"コール",v:false},campaign:{k:"キャンペーン",v:false},can:{k:"キャン",v:false},
+  cancel:{k:"キャンセル",v:false},capacity:{k:"キャパシティ",v:false},capture:{k:"キャプチャー",v:false},
+  case:{k:"ケース",v:false},category:{k:"カテゴリー",v:false},certificate:{k:"サーティフィケート",v:false},
+  change:{k:"チェンジ",v:false},channel:{k:"チャンネル",v:false},chart:{k:"チャート",v:false},
+  check:{k:"チェック",v:false},class:{k:"クラス",v:false},click:{k:"クリック",v:false},client:{k:"クライアント",v:false},
+  cloud:{k:"クラウド",v:false},code:{k:"コード",v:false},collection:{k:"コレクション",v:false},column:{k:"カラム",v:false},
+  command:{k:"コマンド",v:false},comment:{k:"コメント",v:false},commit:{k:"コミット",v:false},
+  communication:{k:"コミュニケーション",v:false},community:{k:"コミュニティ",v:false},company:{k:"カンパニー",v:false},
+  completely:{k:"コンプリートリー",v:false},compliance:{k:"コンプライアンス",v:false},component:{k:"コンポーネント",v:false},
+  config:{k:"コンフィグ",v:false},configuration:{k:"コンフィギュレーション",v:false},confirm:{k:"コンファーム",v:false},
+  connect:{k:"コネクト",v:false},connection:{k:"コネクション",v:false},content:{k:"コンテンツ",v:false},
+  context:{k:"コンテキスト",v:false},contract:{k:"コントラクト",v:false},control:{k:"コントロール",v:false},
+  copy:{k:"コピー",v:false},corporate:{k:"コーポレート",v:false},cost:{k:"コスト",v:false},
+  create:{k:"クリエイト",v:false},criteria:{k:"クライテリア",v:false},current:{k:"カレント",v:false},customer:{k:"カスタマー",v:false},
+  dashboard:{k:"ダッシュボード",v:false},data:{k:"デイタ",v:false},database:{k:"データベース",v:false},
+  debug:{k:"デバッグ",v:false},default:{k:"デフォルト",v:false},delete:{k:"デリート",v:false},
+  delivery:{k:"デリバリー",v:false},deploy:{k:"デプロイ",v:false},deployment:{k:"デプロイメント",v:false},
+  description:{k:"ディスクリプション",v:false},design:{k:"デザイン",v:false},detail:{k:"ディテール",v:false},
+  develop:{k:"デベロップ",v:false},developer:{k:"デベロッパー",v:false},development:{k:"デベロップメント",v:false},
+  different:{k:"ディファレント",v:false},digital:{k:"デジタル",v:false},direct:{k:"ダイレクト",v:false},
+  directory:{k:"ディレクトリ",v:false},display:{k:"ディスプレイ",v:false},distribution:{k:"ディストリビューション",v:false},
+  document:{k:"ドキュメント",v:false},domain:{k:"ドメイン",v:false},download:{k:"ダウンロード",v:false},driver:{k:"ドライバー",v:false},
+  each:{k:"イーチ",v:true},edit:{k:"エディット",v:true},editor:{k:"エディター",v:true},email:{k:"イーメール",v:true},
+  enable:{k:"イネーブル",v:true},endpoint:{k:"エンドポイント",v:true},english:{k:"イングリッシュ",v:true},
+  enterprise:{k:"エンタープライズ",v:true},environment:{k:"エンバイロメント",v:true},error:{k:"エラー",v:true},
+  event:{k:"イベント",v:true},every:{k:"エブリ",v:true},example:{k:"イグザンプル",v:true},
+  execute:{k:"エクセキュート",v:true},execution:{k:"エクセキューション",v:true},export:{k:"エクスポート",v:true},
+  extension:{k:"エクステンション",v:true},external:{k:"エクスターナル",v:true},
+  feature:{k:"フィーチャー",v:false},feedback:{k:"フィードバック",v:false},field:{k:"フィールド",v:false},
+  file:{k:"ファイル",v:false},filter:{k:"フィルター",v:false},first:{k:"ファースト",v:false},flag:{k:"フラグ",v:false},
+  flow:{k:"フロー",v:false},folder:{k:"フォルダ",v:false},for:{k:"フォー",v:false},form:{k:"フォーム",v:false},
+  format:{k:"フォーマット",v:false},framework:{k:"フレームワーク",v:false},free:{k:"フリー",v:false},
+  from:{k:"フロム",v:false},front:{k:"フロント",v:false},frontend:{k:"フロントエンド",v:false},function:{k:"ファンクション",v:false},
+  generate:{k:"ジェネレート",v:false},get:{k:"ゲット",v:false},global:{k:"グローバル",v:false},
+  google:{k:"グーグル",v:false},governance:{k:"ガバナンス",v:false},group:{k:"グループ",v:false},guide:{k:"ガイド",v:false},
+  have:{k:"ハブ",v:false},header:{k:"ヘッダー",v:false},hello:{k:"ハロー",v:false},help:{k:"ヘルプ",v:false},
+  here:{k:"ヒア",v:false},history:{k:"ヒストリー",v:false},home:{k:"ホーム",v:false},host:{k:"ホスト",v:false},
+  how:{k:"ハウ",v:false},http:{k:"エイチティティピー",v:false},https:{k:"エイチティティピーエス",v:false},
+  icon:{k:"アイコン",v:true},image:{k:"イメージ",v:true},impact:{k:"インパクト",v:true},implement:{k:"インプリメント",v:true},
+  import:{k:"インポート",v:true},in:{k:"イン",v:true},index:{k:"インデックス",v:true},
+  infrastructure:{k:"インフラストラクチャー",v:true},input:{k:"インプット",v:true},install:{k:"インストール",v:true},
+  insurance:{k:"インシュアランス",v:true},integration:{k:"インテグレーション",v:true},interface:{k:"インターフェース",v:true},
+  internal:{k:"インターナル",v:true},is:{k:"イズ",v:true},issue:{k:"イシュー",v:true},it:{k:"イット",v:true},item:{k:"アイテム",v:true},
+  job:{k:"ジョブ",v:false},just:{k:"ジャスト",v:false},key:{k:"キー",v:false},keyword:{k:"キーワード",v:false},kubernetes:{k:"クーバネティス",v:false},
+  label:{k:"ラベル",v:false},language:{k:"ランゲージ",v:false},large:{k:"ラージ",v:false},layer:{k:"レイヤー",v:false},
+  library:{k:"ライブラリー",v:false},link:{k:"リンク",v:false},list:{k:"リスト",v:false},load:{k:"ロード",v:false},
+  local:{k:"ローカル",v:false},log:{k:"ログ",v:false},login:{k:"ログイン",v:false},logout:{k:"ログアウト",v:false},
+  make:{k:"メイク",v:false},manage:{k:"マネージ",v:false},management:{k:"マネジメント",v:false},map:{k:"マップ",v:false},
+  market:{k:"マーケット",v:false},marketing:{k:"マーケティング",v:false},memory:{k:"メモリー",v:false},menu:{k:"メニュー",v:false},
+  merge:{k:"マージ",v:false},message:{k:"メッセージ",v:false},method:{k:"メソッド",v:false},metrics:{k:"メトリクス",v:false},
+  microservice:{k:"マイクロサービス",v:false},migration:{k:"マイグレーション",v:false},mobile:{k:"モバイル",v:false},
+  model:{k:"モデル",v:false},module:{k:"モジュール",v:false},monitor:{k:"モニター",v:false},monitoring:{k:"モニタリング",v:false},
+  name:{k:"ネーム",v:false},navigation:{k:"ナビゲーション",v:false},network:{k:"ネットワーク",v:false},
+  new:{k:"ニュー",v:false},next:{k:"ネクスト",v:false},node:{k:"ノード",v:false},not:{k:"ノット",v:false},notification:{k:"ノティフィケーション",v:false},
+  object:{k:"オブジェクト",v:true},of:{k:"オブ",v:true},on:{k:"オン",v:true},open:{k:"オープン",v:true},
+  operation:{k:"オペレーション",v:true},option:{k:"オプション",v:true},order:{k:"オーダー",v:true},
+  organization:{k:"オーガニゼーション",v:true},output:{k:"アウトプット",v:true},owner:{k:"オーナー",v:true},
+  package:{k:"パッケージ",v:false},page:{k:"ページ",v:false},parameter:{k:"パラメーター",v:false},password:{k:"パスワード",v:false},
+  payment:{k:"ペイメント",v:false},performance:{k:"パフォーマンス",v:false},permission:{k:"パーミッション",v:false},
+  pipeline:{k:"パイプライン",v:false},plan:{k:"プラン",v:false},platform:{k:"プラットフォーム",v:false},
+  please:{k:"プリーズ",v:false},plugin:{k:"プラグイン",v:false},policy:{k:"ポリシー",v:false},port:{k:"ポート",v:false},
+  privacy:{k:"プライバシー",v:false},process:{k:"プロセス",v:false},profile:{k:"プロファイル",v:false},
+  project:{k:"プロジェクト",v:false},property:{k:"プロパティ",v:false},protocol:{k:"プロトコル",v:false},
+  public:{k:"パブリック",v:false},pull:{k:"プル",v:false},push:{k:"プッシュ",v:false},
+  query:{k:"クエリ",v:false},queue:{k:"キュー",v:false},
+  react:{k:"リアクト",v:false},read:{k:"リード",v:false},records:{k:"レコードズ",v:false},redirect:{k:"リダイレクト",v:false},
+  register:{k:"レジスター",v:false},release:{k:"リリース",v:false},remote:{k:"リモート",v:false},render:{k:"レンダー",v:false},
+  report:{k:"レポート",v:false},repository:{k:"リポジトリ",v:false},request:{k:"リクエスト",v:false},
+  resource:{k:"リソース",v:false},response:{k:"レスポンス",v:false},result:{k:"リザルト",v:false},
+  return:{k:"リターン",v:false},review:{k:"レビュー",v:false},role:{k:"ロール",v:false},router:{k:"ルーター",v:false},
+  run:{k:"ラン",v:false},runtime:{k:"ランタイム",v:false},
+  save:{k:"セーブ",v:false},scale:{k:"スケール",v:false},schema:{k:"スキーマ",v:false},scope:{k:"スコープ",v:false},
+  script:{k:"スクリプト",v:false},search:{k:"サーチ",v:false},security:{k:"セキュリティ",v:false},select:{k:"セレクト",v:false},
+  send:{k:"センド",v:false},server:{k:"サーバー",v:false},service:{k:"サービス",v:false},session:{k:"セッション",v:false},
+  setting:{k:"セッティング",v:false},settings:{k:"セッティングズ",v:false},setup:{k:"セットアップ",v:false},
+  show:{k:"ショー",v:false},software:{k:"ソフトウェア",v:false},solution:{k:"ソリューション",v:false},
+  source:{k:"ソース",v:false},spreadsheet:{k:"スプレッドシート",v:false},stack:{k:"スタック",v:false},
+  start:{k:"スタート",v:false},status:{k:"ステータス",v:false},stop:{k:"ストップ",v:false},storage:{k:"ストレージ",v:false},
+  strategy:{k:"ストラテジー",v:false},stream:{k:"ストリーム",v:false},structure:{k:"ストラクチャー",v:false},
+  style:{k:"スタイル",v:false},submit:{k:"サブミット",v:false},support:{k:"サポート",v:false},switch:{k:"スイッチ",v:false},
+  sync:{k:"シンク",v:false},system:{k:"システム",v:false},
+  table:{k:"テーブル",v:false},tag:{k:"タグ",v:false},task:{k:"タスク",v:false},team:{k:"チーム",v:false},
+  template:{k:"テンプレート",v:false},test:{k:"テスト",v:false},the:{k:"ザ",v:false},then:{k:"ゼン",v:false},
+  this:{k:"ディス",v:false},time:{k:"タイム",v:false},timeout:{k:"タイムアウト",v:false},title:{k:"タイトル",v:false},
+  to:{k:"トゥ",v:false},token:{k:"トークン",v:false},tool:{k:"ツール",v:false},topic:{k:"トピック",v:false},
+  transaction:{k:"トランザクション",v:false},trigger:{k:"トリガー",v:false},type:{k:"タイプ",v:false},
+  update:{k:"アップデート",v:true},upload:{k:"アップロード",v:true},use:{k:"ユーズ",v:true},user:{k:"ユーザー",v:true},
+  validate:{k:"バリデート",v:false},validation:{k:"バリデーション",v:false},value:{k:"バリュー",v:false},
+  variable:{k:"ヴァリアブル",v:false},version:{k:"バージョン",v:false},view:{k:"ビュー",v:false},virtual:{k:"バーチャル",v:false},
+  web:{k:"ウェブ",v:false},webhook:{k:"ウェブフック",v:false},what:{k:"ワット",v:false},when:{k:"ウェン",v:false},
+  where:{k:"ウェア",v:false},with:{k:"ウィズ",v:false},word:{k:"ワード",v:false},workflow:{k:"ワークフロー",v:false},
+  workspace:{k:"ワークスペース",v:false},write:{k:"ライト",v:false},
+  you:{k:"ユー",v:true},your:{k:"ユア",v:true},
+};
+
+// ── ルールベース変換 ─────────────────────────────────────────────────
+const SUFFIX_MAP=[["tion","ション"],["sion","ション"],["ture","チャー"],["ness","ネス"],["ment","メント"],["ings","イングズ"],["ious","イアス"],["eous","イアス"],["ance","アンス"],["ence","エンス"],["ible","イブル"],["able","エイブル"],["less","レス"],["ware","ウェア"],["ful","フル"],["ing","イング"],["ous","アス"],["ary","エリー"],["ory","オリー"],["ery","エリー"],["ity","イティ"],["ism","イズム"],["ist","イスト"],["ize","アイズ"],["ise","アイズ"],["age","エイジ"],["est","エスト"],["ers","アーズ"],["ure","ュア"],["er","アー"],["gy","ジー"],["ry","リー"],["ly","リー"],["ty","ティ"],["cy","シー"],["ny","ニー"],["py","ピー"],["ky","キー"],["ed","ド"],["es","ズ"]];
+const PREFIX_MAP=[["over","オーバー"],["under","アンダー"],["inter","インター"],["super","スーパー"],["anti","アンチ"],["auto","オート"],["trans","トランス"],["pre","プレ"],["pro","プロ"],["out","アウト"],["com","コン"],["con","コン"],["dis","ディス"],["mis","ミス"],["ab","アブ"],["re","レ"],["un","アン"],["in","イン"],["de","デ"],["ex","エクス"],["be","ビ"]];
+const R_VOWELS={ar:"アー",er:"アー",ir:"アー",or:"オー",ur:"アー"};
+function isVowel(c){return"aeiou".includes(c);}
+function cvKatakana(cons,v){const T={k:{a:"カ",i:"キ",u:"ク",e:"ケ",o:"コ","":"ク"},g:{a:"ガ",i:"ギ",u:"グ",e:"ゲ",o:"ゴ","":"グ"},s:{a:"サ",i:"シ",u:"ス",e:"セ",o:"ソ","":"ス"},t:{a:"タ",i:"ティ",u:"テュ",e:"テ",o:"ト","":"ト"},d:{a:"ダ",i:"ディ",u:"デュ",e:"デ",o:"ド","":"ド"},n:{a:"ナ",i:"ニ",u:"ヌ",e:"ネ",o:"ノ","":"ン"},h:{a:"ハ",i:"ヒ",u:"フ",e:"ヘ",o:"ホ","":"フ"},m:{a:"マ",i:"ミ",u:"ム",e:"メ",o:"モ","":"ム"},r:{a:"ラ",i:"リ",u:"ル",e:"レ",o:"ロ","":"ル"},l:{a:"ラ",i:"リ",u:"ル",e:"レ",o:"ロ","":"ル"},w:{a:"ワ",i:"ウィ",u:"ウ",e:"ウェ",o:"ウォ","":"ウ"},y:{a:"ヤ",i:"イ",u:"ユ",e:"イェ",o:"ヨ","":"イ"},p:{a:"パ",i:"ピ",u:"プ",e:"ペ",o:"ポ","":"プ"},b:{a:"バ",i:"ビ",u:"ブ",e:"ベ",o:"ボ","":"ブ"},f:{a:"ファ",i:"フィ",u:"フ",e:"フェ",o:"フォ","":"フ"},v:{a:"バ",i:"ビ",u:"ブ",e:"ベ",o:"ボ","":"ブ"},z:{a:"ザ",i:"ジ",u:"ズ",e:"ゼ",o:"ゾ","":"ズ"},j:{a:"ジャ",i:"ジ",u:"ジュ",e:"ジェ",o:"ジョ","":"ジ"},c:{a:"カ",i:"シ",u:"カ",e:"セ",o:"コ","":"ク"},x:{a:"クサ",i:"クシ",u:"クス",e:"クセ",o:"クソ","":"クス"},q:{a:"クワ",i:"クウィ",u:"ク",e:"クエ",o:"クオ","":"ク"},ch:{a:"チャ",i:"チ",u:"チュ",e:"チェ",o:"チョ","":"チ"},sh:{a:"シャ",i:"シ",u:"シュ",e:"シェ",o:"ショ","":"シュ"},th:{a:"ザ",i:"ジ",u:"ズ",e:"ゼ",o:"ゾ","":"ズ"},ph:{a:"ファ",i:"フィ",u:"フ",e:"フェ",o:"フォ","":"フ"},wh:{a:"ワ",i:"ウィ",u:"ウ",e:"ウェ",o:"ウォ","":"ウ"},gh:{"":""},kn:{a:"ナ",i:"ニ",u:"ヌ",e:"ネ",o:"ノ","":"ン"},wr:{a:"ラ",i:"リ",u:"ル",e:"レ",o:"ロ","":"ル"},gn:{a:"ナ",i:"ニ",u:"ヌ",e:"ネ",o:"ノ","":"ン"},ps:{a:"サ",i:"シ",u:"ス",e:"セ",o:"ソ","":"ス"},ng:{"":"ング"},ck:{a:"カ",i:"キ",u:"ク",e:"ケ",o:"コ","":"ク"},nk:{"":"ンク"},qu:{a:"クワ",i:"クウィ",u:"ク",e:"クエ",o:"クオ","":"ク"},dg:{a:"ジャ",i:"ジ",u:"ジュ",e:"ジェ",o:"ジョ","":"ジ"},tch:{a:"チャ",i:"チ",u:"チュ",e:"チェ",o:"チョ","":"チ"},sch:{"":"スク"},str:{a:"ストラ",i:"ストリ",u:"ストル",e:"ストレ",o:"ストロ","":"スト"},spr:{a:"スプラ",i:"スプリ",u:"スプル",e:"スプレ",o:"スプロ","":"スプ"},scr:{a:"スクラ",i:"スクリ",u:"スクル",e:"スクレ",o:"スクロ","":"スク"}};const row=T[cons];if(!row)return cons;return row[v]??row[""]??cons;}
+function vowelKatakana(v1,v2){if(v2){const c={aa:"アー",ai:"エイ",au:"オー",aw:"オー",ay:"エイ",ea:"イー",ee:"イー",ei:"エイ",ew:"ユー",ey:"エイ",ia:"イア",ie:"アイ",io:"イオ",oa:"オウ",oe:"オウ",oi:"オイ",oo:"ウー",ou:"アウ",ow:"アウ",oy:"オイ",ua:"ウア",ue:"ユー",ui:"ウィ",uy:"アイ"};if(c[v1+v2])return c[v1+v2];}return({a:"ア",e:"エ",i:"イ",o:"オ",u:"ウ"}[v1])??v1;}
+function matchCluster(w,i){for(const t of["tch","sch","str","spr","scr"])if(w.startsWith(t,i))return[t,i+3];for(const d of["ch","sh","th","ph","wh","gh","kn","wr","gn","ps","ng","ck","nk","qu","dg"])if(w.startsWith(d,i))return[d,i+2];return null;}
+function processCore(raw){if(!raw)return"";const w=raw.replace(/([aeiou][^aeiou])e$/,"$1");let result="",i=0,prev="";while(i<w.length){const c=w[i];if(!isVowel(c)&&c===prev){prev=c;i++;continue;}if(isVowel(c)){const nc=w[i+1];if(nc==="r"){const ar=w[i+2];if(!ar||!isVowel(ar)){result+=R_VOWELS[c+"r"]??(c==="o"?"オー":"アー");prev="r";i+=2;continue;}}if(nc&&isVowel(nc)){result+=vowelKatakana(c,nc);prev=nc;i+=2;continue;}result+=vowelKatakana(c);prev=c;i++;continue;}const cl=matchCluster(w,i);if(cl){const[cons,ni]=cl;const nv=ni<w.length&&isVowel(w[ni])?w[ni]:"";const kana=cvKatakana(cons,nv);if(kana!==cons){let adv=ni-i+(nv?1:0),out=kana;if(nv){const av=w[ni+1];if(av==="r"&&(!w[ni+2]||!isVowel(w[ni+2]))){out+="ー";adv++;}}result+=out;prev=nv||cons.slice(-1);i+=adv;continue;}}const nv2=i+1<w.length&&isVowel(w[i+1])?w[i+1]:"";let out=cvKatakana(c,nv2),adv=1+(nv2?1:0);if(nv2){const av=w[i+2];if(av==="r"&&(!w[i+3]||!isVowel(w[i+3]))){out+="ー";adv++;}}result+=out;prev=nv2||c;i+=adv;}return result;}
+function ruleBasedKatakana(word){const w=word.toLowerCase().replace(/[^a-z]/g,"");if(!w)return word;let core=w,pfx="",sfx="";for(const[p,k]of PREFIX_MAP){if(w.startsWith(p)&&w.length-p.length>=3){pfx=k;core=w.slice(p.length);break;}}for(const[s,k]of SUFFIX_MAP){if(core.endsWith(s)&&core.length-s.length>=2){sfx=k;core=core.slice(0,-s.length);break;}}return(pfx+processCore(core)+sfx)||word;}
+function clean(w){return w.replace(/[^a-zA-Z'-]/g,"");}
+function convertTextToKatakana(text){const raws=text.trim().split(/\s+/);const res=[];for(let i=0;i<raws.length;i++){const raw=raws[i];const word=clean(raw);if(!word)continue;const lower=word.toLowerCase();if(lower==="the"){const next=clean(raws[i+1]??"");let k="ザ";if(next){const e=DICT[next.toLowerCase()];k=(e?e.v:"aeiou".includes(next[0]))?"ジ":"ザ";}res.push({original:raw,katakana:k,source:"dict"});continue;}const e=DICT[lower];if(e){res.push({original:raw,katakana:e.k,source:"dict"});continue;}res.push({original:raw,katakana:ruleBasedKatakana(word),source:"rule"});}return res;}
+
+// ── 画面管理 ─────────────────────────────────────────────────────────
+const SCREENS={idle:"screen-idle",camera:"screen-camera",processing:"screen-processing",result:"screen-result"};
+function showScreen(name){Object.values(SCREENS).forEach(id=>document.getElementById(id).classList.add("hidden"));document.getElementById(SCREENS[name]).classList.remove("hidden");}
+
+let videoStream=null,currentOcrText="",currentWords=[];
+
+async function startCamera(){
+  showScreen("camera");
+  document.getElementById("camera-error").classList.add("hidden");
+  try{
+    videoStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}}});
+    document.getElementById("video").srcObject=videoStream;
+  }catch(e){
+    const el=document.getElementById("camera-error");
+    el.textContent="⚠️ カメラの起動に失敗しました: "+e.message;
+    el.classList.remove("hidden");
+  }
+}
+
+function stopCamera(){
+  if(videoStream){videoStream.getTracks().forEach(t=>t.stop());videoStream=null;}
+  const v=document.getElementById("video");if(v)v.srcObject=null;
+}
+
+function captureImage(){
+  const video=document.getElementById("video");
+  const canvas=document.createElement("canvas");
+  canvas.width=video.videoWidth||640;canvas.height=video.videoHeight||480;
+  canvas.getContext("2d").drawImage(video,0,0);
+  return canvas.toDataURL("image/jpeg",0.9);
+}
+
+async function processImage(dataUrl){
+  document.getElementById("captured-img").src=dataUrl;
+  document.getElementById("result-img").src=dataUrl;
+  stopCamera();
+  showScreen("processing");
+  setProgress(0);
+  try{
+    const result=await Tesseract.recognize(dataUrl,"eng",{logger:m=>{if(m.status==="recognizing text")setProgress(Math.round(m.progress*100));}});
+    const text=result.data.text.replace(/\n+/g," ").replace(/\s{2,}/g," ").trim();
+    if(!text){alert("テキストを認識できませんでした。明るい場所でもう一度試してください。");showScreen("camera");startCamera();return;}
+    currentOcrText=text;
+    currentWords=convertTextToKatakana(text);
+    document.getElementById("ocr-text").textContent=text;
+    document.getElementById("confidence-text").textContent="精度 "+Math.round(result.data.confidence)+"%";
+    document.getElementById("full-katakana").textContent=currentWords.map(w=>w.katakana).join(" ");
+    renderWordCards(currentWords);
+    resetAiSection();
+    showScreen("result");
+  }catch(e){alert("OCR処理中にエラーが発生しました。\n"+e.message);showScreen("camera");startCamera();}
+}
+
+function setProgress(pct){
+  document.getElementById("progress-bar").style.width=pct+"%";
+  document.getElementById("progress-text").textContent=pct+"%";
+}
+
+function renderWordCards(words){
+  const c=document.getElementById("word-cards");c.innerHTML="";
+  for(const w of words){
+    const div=document.createElement("div");
+    div.className="flex flex-col items-center px-2 py-1 rounded-lg";
+    const color=w.source==="dict"?"text-blue-300":w.source==="ai"?"text-green-300":"text-purple-300";
+    const label=w.source==="dict"?"辞書":w.source==="ai"?"AI":"変換";
+    div.innerHTML=`<span class="text-xs font-medium ${color}">${w.katakana}</span><span class="text-base font-semibold text-gray-300">${w.original}</span><span class="text-[10px] ${color} opacity-60">${label}</span>`;
+    c.appendChild(div);
+  }
+}
+
+function resetAiSection(){
+  document.getElementById("section-ai").innerHTML=`<div class="flex items-center justify-between"><div><h2 class="text-sm font-semibold text-gray-300">✨ AI精度向上</h2><p class="text-xs text-gray-500 mt-0.5">GPTが全単語を高精度に変換</p></div><button id="btn-ai-convert" class="bg-green-700 active:bg-green-800 text-white text-sm font-bold px-4 py-2 rounded-xl">AI変換</button></div><p id="ai-error" class="text-xs text-red-400 mt-2 hidden"></p>`;
+  document.getElementById("btn-ai-convert").onclick=aiConvert;
+}
+
+function speak(text){
+  if(!text||!window.speechSynthesis)return;
+  window.speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);u.lang="en-US";u.rate=0.85;
+  window.speechSynthesis.speak(u);
+}
+
+// ── APIキー管理 ──────────────────────────────────────────────────────
+const KEY_STORAGE="kana_english_openai_key";
+function getApiKey(){return localStorage.getItem(KEY_STORAGE)||"";}
+function updateApiStatus(){
+  const el=document.getElementById("api-status");
+  if(getApiKey()){el.textContent="✓ AI有効";el.className="text-xs text-green-400 bg-green-900/40 px-2 py-1 rounded-full";}
+  else{el.textContent="英語→カタカナ";el.className="text-xs text-gray-500 bg-gray-800 px-2 py-1 rounded-full";}
+}
+function showMsg(id,text,cls){const el=document.getElementById(id);el.textContent=text;el.className="text-xs text-center "+cls;el.classList.remove("hidden");}
+function openSettings(){document.getElementById("input-apikey").value=getApiKey()?"sk-***（保存済み）":"";document.getElementById("apikey-message").classList.add("hidden");document.getElementById("modal-settings").classList.remove("hidden");}
+function closeSettings(){document.getElementById("modal-settings").classList.add("hidden");}
+
+document.getElementById("btn-settings").onclick=openSettings;
+document.getElementById("btn-close-settings").onclick=closeSettings;
+document.getElementById("modal-settings").onclick=e=>{if(e.target===document.getElementById("modal-settings"))closeSettings();};
+document.getElementById("btn-save-apikey").onclick=()=>{
+  const val=document.getElementById("input-apikey").value.trim();
+  if(!val||val.startsWith("sk-***")){showMsg("apikey-message","入力してください","text-red-400");return;}
+  if(!val.startsWith("sk-")){showMsg("apikey-message","sk- で始まるキーを入力してください","text-red-400");return;}
+  localStorage.setItem(KEY_STORAGE,val);updateApiStatus();
+  showMsg("apikey-message","✓ 保存しました","text-green-400");
+  setTimeout(closeSettings,800);
+};
+document.getElementById("btn-delete-apikey").onclick=()=>{
+  localStorage.removeItem(KEY_STORAGE);
+  document.getElementById("input-apikey").value="";
+  updateApiStatus();showMsg("apikey-message","削除しました","text-gray-400");
+};
+
+// ── AI変換 ───────────────────────────────────────────────────────────
+async function aiConvert(){
+  const key=getApiKey();if(!key){openSettings();return;}
+  const btn=document.getElementById("btn-ai-convert");
+  const errEl=document.getElementById("ai-error");
+  btn.disabled=true;btn.textContent="変換中…";errEl.classList.add("hidden");
+  try{
+    const words=[...new Set(currentWords.map(w=>w.original.replace(/[^a-zA-Z'-]/g,"").toLowerCase()).filter(Boolean))].slice(0,100);
+    const res=await fetch("https://api.openai.com/v1/chat/completions",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},
+      body:JSON.stringify({model:"gpt-4o-mini",temperature:0,max_tokens:1024,messages:[
+        {role:"system",content:"あなたは英語発音のカタカナ変換の専門家です。日本人英語学習者向けに、英単語を実際の発音に近いカタカナに変換します。\nルール：\n- 実際の英語の発音に忠実なカタカナを返す\n- 1単語につき1行、「単語=カタカナ」形式で返す\n- 変換できない場合は「単語=?」と返す\n例：hello=ハロー\nsoftware=ソフトウェア"},
+        {role:"user",content:"以下の英単語をカタカナに変換してください：\n\n"+words.join("\n")},
+      ]}),
+    });
+    if(!res.ok){const d=await res.json().catch(()=>({}));if(res.status===401)throw new Error("APIキーが無効です。設定を確認してください。");throw new Error(d.error?.message||"エラー("+res.status+")");}
+    const data=await res.json();
+    const aiMap={};
+    for(const line of(data.choices[0]?.message?.content??"").split("\n")){const eq=line.indexOf("=");if(eq===-1)continue;const w=line.slice(0,eq).trim().toLowerCase(),k=line.slice(eq+1).trim();if(w&&k&&k!=="?")aiMap[w]=k;}
+    currentWords=currentWords.map(r=>{const lower=r.original.replace(/[^a-zA-Z'-]/g,"").toLowerCase();return aiMap[lower]?{...r,katakana:aiMap[lower],source:"ai"}:r;});
+    renderWordCards(currentWords);
+    document.getElementById("full-katakana").textContent=currentWords.map(w=>w.katakana).join(" ");
+    document.getElementById("section-ai").innerHTML='<p class="text-xs text-green-400 text-center py-2">✓ AI変換を適用しました</p>';
+  }catch(e){errEl.textContent="⚠️ "+e.message;errEl.classList.remove("hidden");btn.disabled=false;btn.textContent="AI変換";}
+}
+
+// ── イベントリスナー ─────────────────────────────────────────────────
+document.getElementById("btn-home").onclick=()=>{stopCamera();showScreen("idle");};
+document.getElementById("btn-start-camera").onclick=startCamera;
+document.getElementById("btn-back-from-camera").onclick=()=>{stopCamera();showScreen("idle");};
+document.getElementById("btn-capture").onclick=async()=>await processImage(captureImage());
+document.getElementById("btn-retry").onclick=()=>{showScreen("camera");startCamera();};
+document.getElementById("btn-home-from-result").onclick=()=>{stopCamera();showScreen("idle");};
+document.getElementById("btn-speak").onclick=()=>speak(currentOcrText);
+function handleFile(input){input.onchange=async()=>{const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=async e=>await processImage(e.target.result);r.readAsDataURL(f);input.value=""};}
+handleFile(document.getElementById("upload-idle"));
+handleFile(document.getElementById("upload-camera"));
+updateApiStatus();
+</script>
+</body>
+</html>
