@@ -21,7 +21,9 @@
     border-radius: 8px;
     width: 85%; height: 55%;
     opacity: 0.7;
+    transition: width 0.2s ease, height 0.2s ease;
   }
+  .mode-chip.active { border-color: #60a5fa; background: rgba(37, 99, 235, 0.22); color: white; }
   .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 16px); }
 </style>
 </head>
@@ -65,6 +67,17 @@
       <h2 class="text-xl font-bold">英語をかざして読む</h2>
       <p class="text-gray-400 text-sm leading-relaxed">カメラで英文を撮影して<br>カタカナ発音を表示します</p>
     </div>
+    <div class="w-full bg-gray-800 rounded-2xl p-4 space-y-3">
+      <div class="flex items-center justify-between gap-3">
+        <h3 class="text-sm font-semibold text-gray-300">読み取りモード</h3>
+        <span class="text-[11px] text-gray-500">先に選んでから撮影</span>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <button type="button" data-mode="phrase" class="mode-chip active border border-blue-500/70 bg-blue-900/20 text-white font-semibold rounded-2xl py-3 px-3 text-sm">文章モード</button>
+        <button type="button" data-mode="word" class="mode-chip border border-gray-700 bg-gray-900/60 text-gray-300 font-semibold rounded-2xl py-3 px-3 text-sm">単語モード</button>
+      </div>
+      <p id="mode-help" class="text-xs text-gray-400 leading-relaxed">文章モード: フレーズや短文向け。中央の範囲に読みたい英文だけを入れてください。</p>
+    </div>
     <div class="w-full space-y-3">
       <button id="btn-start-camera" class="w-full bg-blue-600 active:bg-blue-700 text-white font-bold py-5 rounded-2xl text-lg shadow-lg shadow-blue-900/40">
         📷 カメラを起動する
@@ -93,6 +106,17 @@
         <span class="text-gray-300 text-sm">🔊 音声再生 / ✨ AI高精度変換</span>
       </div>
     </div>
+    <div class="w-full bg-gray-800 rounded-2xl p-4 space-y-3">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-300">⌨️ 単語を直接入力</h3>
+        <p class="text-xs text-gray-500 mt-1">カメラでうまく読めない単語はここで変換できます。</p>
+      </div>
+      <input id="manual-input" type="text" placeholder="例: hello / thank you" class="w-full bg-gray-900 border border-gray-700 text-white text-base rounded-2xl px-4 py-3 focus:outline-none focus:border-blue-500">
+      <div class="flex gap-2">
+        <button id="btn-manual-convert" class="flex-1 bg-emerald-600 active:bg-emerald-700 text-white font-bold py-3 rounded-2xl text-sm">変換する</button>
+        <button id="btn-manual-clear" class="bg-gray-700 active:bg-gray-600 text-gray-200 font-bold py-3 px-4 rounded-2xl text-sm">クリア</button>
+      </div>
+    </div>
   </div>
 
   <!-- カメラ画面 -->
@@ -100,7 +124,7 @@
     <div class="relative w-full rounded-2xl overflow-hidden bg-black" style="aspect-ratio:4/3">
       <video id="video" autoplay playsinline muted class="w-full h-full object-cover"></video>
       <div id="camera-guide"><div class="frame"></div></div>
-      <p class="absolute bottom-2 left-0 right-0 text-center text-xs text-yellow-300 opacity-80">黄枠内に英文を合わせてください</p>
+      <p id="camera-guide-text" class="absolute bottom-2 left-0 right-0 text-center text-xs text-yellow-300 opacity-80">黄枠内に英文を合わせてください</p>
     </div>
     <div id="camera-error" class="hidden bg-red-900/50 border border-red-700 rounded-xl px-4 py-3 text-red-300 text-sm"></div>
     <button id="btn-capture" class="w-full bg-yellow-500 active:bg-yellow-600 text-black font-bold py-5 rounded-2xl text-xl shadow-lg">
@@ -121,7 +145,7 @@
       <img id="captured-img" src="" alt="" class="w-full h-full object-cover">
     </div>
     <div class="bg-gray-800 rounded-2xl p-5 space-y-3">
-      <p class="text-sm text-gray-300 text-center">OCR処理中…</p>
+      <p id="processing-label" class="text-sm text-gray-300 text-center">OCR処理中…</p>
       <div class="w-full bg-gray-700 rounded-full h-3">
         <div id="progress-bar" class="bg-blue-500 h-3 rounded-full transition-all duration-200" style="width:0%"></div>
       </div>
@@ -131,14 +155,14 @@
 
   <!-- 結果画面 -->
   <div id="screen-result" class="hidden space-y-4 pb-6">
-    <div class="rounded-2xl overflow-hidden bg-black" style="aspect-ratio:4/3">
+    <div id="result-image-wrap" class="rounded-2xl overflow-hidden bg-black" style="aspect-ratio:4/3">
       <img id="result-img" src="" alt="" class="w-full h-full object-cover">
     </div>
 
     <!-- OCR認識結果 -->
     <section class="bg-gray-800 rounded-2xl p-4">
       <div class="flex items-center justify-between mb-2">
-        <h2 class="text-sm font-semibold text-gray-300">📷 読み取り結果</h2>
+        <h2 id="ocr-section-title" class="text-sm font-semibold text-gray-300">📷 読み取り結果</h2>
         <span id="confidence-text" class="text-xs text-gray-500"></span>
       </div>
       <p id="ocr-text" class="text-white text-base leading-relaxed break-words mb-3"></p>
@@ -318,10 +342,52 @@ function convertTextToKatakana(text){const raws=text.trim().split(/\s+/);const r
 const SCREENS={idle:"screen-idle",camera:"screen-camera",processing:"screen-processing",result:"screen-result"};
 function showScreen(name){Object.values(SCREENS).forEach(id=>document.getElementById(id).classList.add("hidden"));document.getElementById(SCREENS[name]).classList.remove("hidden");}
 
-let videoStream=null,currentOcrText="",currentWords=[];
+const MODE_CONFIG={
+  phrase:{
+    label:"文章モード",
+    help:"文章モード: フレーズや短文向け。中央の範囲に読みたい英文だけを入れてください。",
+    guide:"黄枠内に英文を合わせてください",
+    frame:{width:"85%",height:"45%"},
+    crop:{x:0.08,y:0.2,width:0.84,height:0.4},
+    processing:"文章を読み取り中…",
+  },
+  word:{
+    label:"単語モード",
+    help:"単語モード: 1語を大きく中央に置くと、余計な文字を拾いにくくなります。",
+    guide:"黄枠内に単語を1つだけ合わせてください",
+    frame:{width:"68%",height:"18%"},
+    crop:{x:0.18,y:0.39,width:0.64,height:0.18},
+    processing:"単語を読み取り中…",
+  },
+};
+
+let videoStream=null,currentOcrText="",currentWords=[],currentMode="phrase";
+
+function setMode(mode){
+  if(!MODE_CONFIG[mode])return;
+  currentMode=mode;
+  const config=MODE_CONFIG[mode];
+  document.querySelectorAll(".mode-chip").forEach(btn=>{
+    const active=btn.dataset.mode===mode;
+    btn.classList.toggle("active",active);
+    btn.classList.toggle("border-blue-500/70",active);
+    btn.classList.toggle("bg-blue-900/20",active);
+    btn.classList.toggle("text-white",active);
+    btn.classList.toggle("border-gray-700",!active);
+    btn.classList.toggle("bg-gray-900/60",!active);
+    btn.classList.toggle("text-gray-300",!active);
+  });
+  document.getElementById("mode-help").textContent=config.help;
+  document.getElementById("camera-guide-text").textContent=config.guide;
+  document.getElementById("processing-label").textContent=config.processing;
+  const frame=document.querySelector("#camera-guide .frame");
+  frame.style.width=config.frame.width;
+  frame.style.height=config.frame.height;
+}
 
 async function startCamera(){
   showScreen("camera");
+  setMode(currentMode);
   document.getElementById("camera-error").classList.add("hidden");
   try{
     videoStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}}});
@@ -346,24 +412,157 @@ function captureImage(){
   return canvas.toDataURL("image/jpeg",0.9);
 }
 
+function normalizeToken(token){
+  return token.replace(/[^a-zA-Z'-]/g,"").replace(/^['-]+|['-]+$/g,"");
+}
+
+function keepToken(token){
+  if(!token)return false;
+  const lower=token.toLowerCase();
+  return token.length>1||lower==="a"||lower==="i";
+}
+
+function enhanceCanvas(canvas,threshold){
+  const ctx=canvas.getContext("2d",{willReadFrequently:true});
+  const {width,height}=canvas;
+  const imageData=ctx.getImageData(0,0,width,height);
+  const data=imageData.data;
+  let total=0,pixels=0;
+  for(let i=0;i<data.length;i+=4){
+    const gray=data[i]*0.299+data[i+1]*0.587+data[i+2]*0.114;
+    total+=gray;
+    pixels++;
+  }
+  const average=total/Math.max(1,pixels);
+  const cutoff=threshold?Math.max(110,Math.min(200,average*0.96)):null;
+  const contrast=threshold?1.9:1.35;
+  for(let i=0;i<data.length;i+=4){
+    let gray=data[i]*0.299+data[i+1]*0.587+data[i+2]*0.114;
+    gray=(gray-128)*contrast+128;
+    gray=Math.max(0,Math.min(255,gray));
+    if(cutoff!==null)gray=gray>cutoff?255:0;
+    data[i]=gray;data[i+1]=gray;data[i+2]=gray;
+  }
+  ctx.putImageData(imageData,0,0);
+}
+
+function loadImage(dataUrl){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>resolve(img);
+    img.onerror=()=>reject(new Error("画像を読み込めませんでした"));
+    img.src=dataUrl;
+  });
+}
+
+async function prepareImageForOcr(dataUrl){
+  const img=await loadImage(dataUrl);
+  const crop=MODE_CONFIG[currentMode].crop;
+  const sx=Math.max(0,Math.round(img.width*crop.x));
+  const sy=Math.max(0,Math.round(img.height*crop.y));
+  const sw=Math.max(1,Math.round(img.width*crop.width));
+  const sh=Math.max(1,Math.round(img.height*crop.height));
+  const scale=currentMode==="word"?2:1.5;
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.max(480,Math.round(sw*scale));
+  canvas.height=Math.max(180,Math.round(sh*scale));
+  const ctx=canvas.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(img,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
+  enhanceCanvas(canvas,currentMode==="word");
+  return canvas.toDataURL("image/jpeg",0.92);
+}
+
+function extractPhraseText(result){
+  const fromWords=(result.data.words||[])
+    .map(word=>normalizeToken(word.text||""))
+    .filter(keepToken);
+  if(fromWords.length)return fromWords.join(" ");
+  return result.data.text
+    .replace(/\n+/g," ")
+    .replace(/\s{2,}/g," ")
+    .split(/\s+/)
+    .map(normalizeToken)
+    .filter(keepToken)
+    .join(" ")
+    .trim();
+}
+
+function wordScore(entry){
+  const text=normalizeToken(entry.text||"");
+  if(!text)return null;
+  const bbox=entry.bbox||{};
+  const width=Math.max(0,(bbox.x1??0)-(bbox.x0??0));
+  const height=Math.max(0,(bbox.y1??0)-(bbox.y0??0));
+  const area=width*height;
+  const confidence=Number(entry.confidence??0);
+  const alphaCount=(text.match(/[a-z]/gi)||[]).length;
+  const penalty=/\d/.test(text)?35:0;
+  return {text,score:confidence+alphaCount*8+Math.min(area/1500,18)-penalty};
+}
+
+function extractWordText(result){
+  const ranked=(result.data.words||[])
+    .map(wordScore)
+    .filter(Boolean)
+    .sort((a,b)=>b.score-a.score);
+  if(ranked.length)return ranked[0].text;
+  const fallback=extractPhraseText(result).split(/\s+/).sort((a,b)=>b.length-a.length)[0]||"";
+  return fallback;
+}
+
+function updateResultImage(dataUrl){
+  const wrap=document.getElementById("result-image-wrap");
+  if(dataUrl){
+    wrap.classList.remove("hidden");
+    document.getElementById("result-img").src=dataUrl;
+  }else{
+    wrap.classList.add("hidden");
+    document.getElementById("result-img").src="";
+  }
+}
+
+function updateRetryButton(sourceType){
+  const btn=document.getElementById("btn-retry");
+  if(sourceType==="manual"){
+    btn.textContent="⌨️ 入力に戻る";
+    btn.onclick=()=>{showScreen("idle");document.getElementById("manual-input").focus();};
+    return;
+  }
+  btn.textContent=currentMode==="word"?"🔄 もう一度単語を読む":"🔄 再読み取り";
+  btn.onclick=()=>{showScreen("camera");startCamera();};
+}
+
+function renderResult(text,{confidenceText="",imageUrl="",title="📷 読み取り結果",sourceType="ocr"}={}){
+  currentOcrText=text;
+  currentWords=convertTextToKatakana(text);
+  document.getElementById("ocr-section-title").textContent=title;
+  document.getElementById("ocr-text").textContent=text;
+  document.getElementById("confidence-text").textContent=confidenceText;
+  document.getElementById("full-katakana").textContent=currentWords.map(w=>w.katakana).join(" ");
+  renderWordCards(currentWords);
+  updateResultImage(imageUrl);
+  updateRetryButton(sourceType);
+  resetAiSection();
+  showScreen("result");
+}
+
 async function processImage(dataUrl){
-  document.getElementById("captured-img").src=dataUrl;
-  document.getElementById("result-img").src=dataUrl;
+  const preparedImage=await prepareImageForOcr(dataUrl);
+  document.getElementById("captured-img").src=preparedImage;
   stopCamera();
   showScreen("processing");
   setProgress(0);
   try{
-    const result=await Tesseract.recognize(dataUrl,"eng",{logger:m=>{if(m.status==="recognizing text")setProgress(Math.round(m.progress*100));}});
-    const text=result.data.text.replace(/\n+/g," ").replace(/\s{2,}/g," ").trim();
-    if(!text){alert("テキストを認識できませんでした。明るい場所でもう一度試してください。");showScreen("camera");startCamera();return;}
-    currentOcrText=text;
-    currentWords=convertTextToKatakana(text);
-    document.getElementById("ocr-text").textContent=text;
-    document.getElementById("confidence-text").textContent="精度 "+Math.round(result.data.confidence)+"%";
-    document.getElementById("full-katakana").textContent=currentWords.map(w=>w.katakana).join(" ");
-    renderWordCards(currentWords);
-    resetAiSection();
-    showScreen("result");
+    const result=await Tesseract.recognize(preparedImage,"eng",{logger:m=>{if(m.status==="recognizing text")setProgress(Math.round(m.progress*100));}});
+    const text=(currentMode==="word"?extractWordText(result):extractPhraseText(result)).trim();
+    if(!text){
+      const msg=currentMode==="word"?"単語を認識できませんでした。黄枠の中央に1語だけを大きく合わせて、もう一度試してください。":"テキストを認識できませんでした。黄枠の中に読みたい英文だけを入れて、もう一度試してください。";
+      alert(msg);
+      showScreen("camera");
+      startCamera();
+      return;
+    }
+    renderResult(text,{confidenceText:"精度 "+Math.round(result.data.confidence)+"%",imageUrl:preparedImage,title:"📷 読み取り結果",sourceType:"ocr"});
   }catch(e){alert("OCR処理中にエラーが発生しました。\n"+e.message);showScreen("camera");startCamera();}
 }
 
@@ -387,6 +586,14 @@ function renderWordCards(words){
 function resetAiSection(){
   document.getElementById("section-ai").innerHTML=`<div class="flex items-center justify-between"><div><h2 class="text-sm font-semibold text-gray-300">✨ AI精度向上</h2><p class="text-xs text-gray-500 mt-0.5">GPTが全単語を高精度に変換</p></div><button id="btn-ai-convert" class="bg-green-700 active:bg-green-800 text-white text-sm font-bold px-4 py-2 rounded-xl">AI変換</button></div><p id="ai-error" class="text-xs text-red-400 mt-2 hidden"></p>`;
   document.getElementById("btn-ai-convert").onclick=aiConvert;
+}
+
+function handleManualConvert(){
+  const input=document.getElementById("manual-input");
+  const text=input.value.trim().replace(/\s{2,}/g," ");
+  if(!text){input.focus();return;}
+  stopCamera();
+  renderResult(text,{confidenceText:"手入力",imageUrl:"",title:"⌨️ 入力内容",sourceType:"manual"});
 }
 
 function speak(text){
@@ -457,12 +664,17 @@ document.getElementById("btn-home").onclick=()=>{stopCamera();showScreen("idle")
 document.getElementById("btn-start-camera").onclick=startCamera;
 document.getElementById("btn-back-from-camera").onclick=()=>{stopCamera();showScreen("idle");};
 document.getElementById("btn-capture").onclick=async()=>await processImage(captureImage());
-document.getElementById("btn-retry").onclick=()=>{showScreen("camera");startCamera();};
 document.getElementById("btn-home-from-result").onclick=()=>{stopCamera();showScreen("idle");};
 document.getElementById("btn-speak").onclick=()=>speak(currentOcrText);
+document.querySelectorAll(".mode-chip").forEach(btn=>btn.onclick=()=>setMode(btn.dataset.mode));
+document.getElementById("btn-manual-convert").onclick=handleManualConvert;
+document.getElementById("btn-manual-clear").onclick=()=>{document.getElementById("manual-input").value="";document.getElementById("manual-input").focus();};
+document.getElementById("manual-input").addEventListener("keydown",e=>{if(e.key==="Enter")handleManualConvert();});
 function handleFile(input){input.onchange=async()=>{const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=async e=>await processImage(e.target.result);r.readAsDataURL(f);input.value=""};}
 handleFile(document.getElementById("upload-idle"));
 handleFile(document.getElementById("upload-camera"));
+setMode(currentMode);
+updateRetryButton("ocr");
 updateApiStatus();
 </script>
 </body>
