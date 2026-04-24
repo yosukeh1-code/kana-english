@@ -682,15 +682,29 @@ async function aiConvert(){
   btn.disabled=true;btn.textContent="補強中…";errEl.classList.add("hidden");
   try{
     const words=[...new Set(currentWords.map(w=>w.original.replace(/[^a-zA-Z'-]/g,"").toLowerCase()).filter(Boolean))].slice(0,100);
-    const res=await fetch("https://api.openai.com/v1/chat/completions",{
-      method:"POST",
-      headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},
-      body:JSON.stringify({model:"gpt-4o-mini",temperature:0,max_tokens:1024,messages:[
-        {role:"system",content:"あなたは英語学習アシスタントです。日本人学習者向けに、英単語ごとに実際の発音に近いカタカナと、短い日本語の意味を返します。\nルール：\n- 1単語につき1行\n- 形式は必ず「単語=カタカナ|意味」\n- 意味は短く自然な日本語にする\n- 変換できない場合は「単語=?|?」\n例：hello=ハロー|こんにちは\nsoftware=ソフトウェア|ソフトウェア"},
-        {role:"user",content:"以下の英単語を、カタカナ発音と日本語の意味に変換してください：\n\n"+words.join("\n")},
-      ]}),
-    });
-    if(!res.ok){const d=await res.json().catch(()=>({}));if(res.status===401)throw new Error("APIキーが無効です。設定を確認してください。");throw new Error(d.error?.message||"エラー("+res.status+")");}
+    let res;
+    try{
+      res=await fetch("https://api.openai.com/v1/chat/completions",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":"Bearer "+key.trim()},
+        body:JSON.stringify({model:"gpt-4o-mini",temperature:0,max_tokens:1024,messages:[
+          {role:"system",content:"あなたは英語学習アシスタントです。日本人学習者向けに、英単語ごとに実際の発音に近いカタカナと、短い日本語の意味を返します。\nルール：\n- 1単語につき1行\n- 形式は必ず「単語=カタカナ|意味」\n- 意味は短く自然な日本語にする\n- 変換できない場合は「単語=?|?」\n例：hello=ハロー|こんにちは\nsoftware=ソフトウェア|ソフトウェア"},
+          {role:"user",content:"以下の英単語を、カタカナ発音と日本語の意味に変換してください：\n\n"+words.join("\n")},
+        ]}),
+      });
+    }catch(fetchErr){
+      const msg=fetchErr.message||"不明なエラー";
+      if(msg.toLowerCase().includes("load failed")||msg.toLowerCase().includes("failed to fetch")||msg.toLowerCase().includes("network")){
+        throw new Error("通信エラー: WiFiに切り替えるか、ブラウザのアドレスバーからページを再読み込みしてください。("+msg+")");
+      }
+      throw fetchErr;
+    }
+    if(!res.ok){
+      const d=await res.json().catch(()=>({}));
+      if(res.status===401)throw new Error("APIキーが無効か期限切れです。⚙️から再入力してください。");
+      if(res.status===429)throw new Error("APIの利用上限に達しました。しばらく待ってから試してください。");
+      throw new Error(d.error?.message||"エラー("+res.status+")");
+    }
     const data=await res.json();
     const aiMap={};
     for(const line of(data.choices[0]?.message?.content??"").split("\n")){
